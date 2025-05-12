@@ -5,18 +5,17 @@ import json
 import matplotlib.pyplot as plt
 from pathlib import Path
 from dotenv import load_dotenv
-from crewai import Agent, Task, Crew, Process
-from crewai_tools import CodeInterpreterTool, SerperDevTool
-from langchain_openai import ChatOpenAI
 from io import StringIO
 import contextlib
 import locale
+from crew.crew_orchestrator import run_analysis
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Set default CSV file path
-DEFAULT_CSV_PATH = "goldloan.csv"
+# Set default CSV file paths
+CUSTOMER_SUMMARY_PATH = "customer_summary.csv"
+PAYMENT_SUMMARY_PATH = "payment_summary.csv"
 
 # Set Indian locale for number formatting (if available)
 try:
@@ -35,6 +34,7 @@ def capture_output():
     finally:
         sys.stdout, sys.stderr = old_out, old_err
 
+# Note: This function is currently unused but kept for potential future use
 def format_indian_currency(amount):
     """Format amount in Indian currency format (₹xx,xx,xxx.xx)"""
     try:
@@ -175,137 +175,48 @@ def format_output(result):
     
     return formatted_result
 
-def run_loan_analysis():
+def load_datasets():
+    """Load all required datasets"""
     try:
-        # Use default CSV file path
-        data_file = DEFAULT_CSV_PATH
+        # Load main loan data
+        loan_df = pd.read_csv(CUSTOMER_SUMMARY_PATH)
         
-        # Validate file exists
-        if not os.path.exists(data_file):
-            print(f"Error: File '{data_file}' not found.")
-            return
-            
-        # Load data
-        try:
-            df = pd.read_csv(data_file)
-            print("\nPreview of your data:")
-            print(df.head(3))
-            print(f"\nTotal rows: {len(df)}")
-            print(f"Columns: {', '.join(df.columns)}")
-            
-            # Get dataset info for dynamic prompting
-            dataset_info = get_dataset_info(df)
-            
-        except Exception as e:
-            print(f"Error analyzing data: {e}")
-            return
+        # Load payment data
+        payment_df = pd.read_csv(PAYMENT_SUMMARY_PATH)
         
-        # Configure OpenAI as the LLM
-        openai_llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0.1,
-        )
-        
-        # Initialize tools
-        code_interpreter = CodeInterpreterTool(
-            execute_code=execute_analysis_code
-        )
-        search_tool = SerperDevTool()
-        
-        # Define the Data Analyst Agent
-        data_analyst = Agent(
-            role="Data Analyst",
-            goal="Analyze data dynamically to extract meaningful insights and patterns.",
-            backstory=f"""You are an expert financial data analyst with proficiency in Python and pandas.
-                      Your role is to dynamically analyze loan data based on user queries.
-                      
-                      The dataset has the following characteristics:
-                      - Rows: {dataset_info['rows']}
-                      - Columns: {', '.join(dataset_info['columns'])}
-                      - Numeric columns: {', '.join(dataset_info['numeric_columns'])}
-                      - Categorical columns: {', '.join(dataset_info['categorical_columns'])}
-                      """,
-            tools=[code_interpreter],
-            verbose=True,
-            allow_delegation=False
-        )
-        
-        # Show example queries
-        print("\nExample queries you can try:")
-        print("1. Analyze loan distribution by customer type and branch")
-        print("2. Find the average loan amount by scheme")
-        print("3. Identify NPA patterns across different branches")
-        print("4. Compare loan amounts between customer types")
-        
-        # Get user query
-        user_query = input("\nEnter your loan data analysis query: ")
-        
-        # Create analysis task
-        analysis_task = Task(
-            description=f"""
-            Analyze the loan data in the file '{data_file}' to answer:
-        
-        {user_query}
-        
-            Start by loading the data with pandas:
-            ```python
-            import pandas as pd
-            df = pd.read_csv('{data_file}')
-            ```
-            
-            Then write analytical code to directly answer the query. Format all monetary values with the Indian Rupee symbol (₹).
-            
-            Provide a complete analysis answering the query with:
-            1. Quantitative insights based on actual data
-            2. Visualizations if helpful
-            3. Business implications
-            4. Recommendations
-            """,
-            agent=data_analyst,
-            expected_output="Data analysis with insights and recommendations."
-        )
-        
-        # Create and run the crew
-        analytics_crew = Crew(
-            agents=[data_analyst],
-            tasks=[analysis_task],
-            process=Process.sequential,
-            verbose=True
-        )
-        
-        print("\nAnalyzing your query. This may take a few moments...")
-        result = analytics_crew.kickoff()
-        
-        # Format the output
-        formatted_result = format_output(result)
-        
-        print("\n" + "="*50)
-        print("LOAN ANALYSIS REPORT")
-        print("="*50)
-        print(formatted_result)
-        
-        return result
-    
+        return loan_df, payment_df
     except Exception as e:
-        print(f"\nAn error occurred during analysis: {str(e)}")
-        print("Please check your API keys and ensure all dependencies are properly installed.")
-        return None
+        print(f"Error loading datasets: {str(e)}")
+        return None, None
 
 def main():
-    print("="*50)
-    print("LOAN DATA ANALYSIS TOOL WITH OPENAI")
-    print("="*50)
-    
-    # Check if OpenAI API key is set correctly
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY not found in .env file")
-        print("Please create a .env file with your OpenAI API key:")
-        print("OPENAI_API_KEY=your_api_key_here")
+    # Load datasets
+    loan_df, payment_df = load_datasets()
+    if loan_df is None or payment_df is None:
+        print("Failed to load datasets. Exiting...")
         return
     
-    # Run the analysis
-    run_loan_analysis()
+    # Show example queries
+    print("\nExample queries you can try:")
+    print("1. Analyze loan distribution by customer type and branch")
+    print("2. Find the average loan amount by scheme")
+    print("3. Compare loan status patterns by branch")
+    print("4. Identify NPA patterns across different branches") 
+    print("5. Analyze relationships between loan details and payment behavior")
+    
+    # Get user query
+    user_query = input("\nEnter your analysis query: ")
+    
+    # Create loading instructions
+    loading_instructions = f"""
+    loan_df = pd.read_csv('{CUSTOMER_SUMMARY_PATH}')
+    payment_df = pd.read_csv('{PAYMENT_SUMMARY_PATH}')
+    """
+    
+    # Run the analysis using the crew orchestrator
+    result = run_analysis(user_query, loading_instructions)
+    print("\nAnalysis Results:")
+    print(result)
 
 if __name__ == "__main__":
     main()
