@@ -1,12 +1,7 @@
 from crewai import Crew
-from agents import (
-    create_data_analyst_agent,
-    create_code_executor_agent,
-    create_response_formatter_agent
-)
-from agents.data_analyst_agent import create_analysis_task
-from agents.code_executor_agent import create_execution_task
-from agents.response_formatter_agent import create_formatting_task
+from agents.data_analyst_agent import create_data_analyst_agent, create_analysis_task
+from agents.code_executor_agent import create_code_executor_agent, create_execution_task
+from agents.response_formatter_agent import create_response_formatter_agent, create_formatting_task
 
 def create_analysis_crew(user_query, loading_instructions):
     """Create and configure the analysis crew with all necessary agents and tasks"""
