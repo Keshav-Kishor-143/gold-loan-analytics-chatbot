@@ -19,15 +19,9 @@ def create_analysis_crew(user_query, loading_instructions):
     formatting_task = create_formatting_task(response_formatter)
     
     # Set up task dependencies
-    code_generation_task.context = """
-    Use the filtered dataframe and query intent provided by the Data Retriever agent.
-    """
-    execution_task.context = """
-    Execute the Python code provided by the Code Generator agent.
-    """
-    formatting_task.context = """
-    Format the results from the Code Executor agent into a meaningful HTML table with business insights.
-    """
+    code_generation_task.context = [retrieval_task]
+    execution_task.context = [code_generation_task]
+    formatting_task.context = [execution_task]
     
     # Create and return the crew with the correct task order
     return Crew(

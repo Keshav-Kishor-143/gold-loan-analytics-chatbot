@@ -14,8 +14,8 @@ from crew.crew_orchestrator import run_analysis
 load_dotenv()
 
 # Set default CSV file paths
-CUSTOMER_SUMMARY_PATH = "customer_summary.csv"
-PAYMENT_SUMMARY_PATH = "payment_summary.csv"
+CUSTOMER_SUMMARY_PATH = "csv/customer_summary.csv"
+PAYMENT_SUMMARY_PATH = "csv/payment_summary.csv"
 
 # Set Indian locale for number formatting (if available)
 try:
