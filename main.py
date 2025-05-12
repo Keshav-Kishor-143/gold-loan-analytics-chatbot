@@ -218,5 +218,75 @@ def main():
     print("\nAnalysis Results:")
     print(result)
 
+# --- FastAPI Implementation ---
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+import uvicorn
+import re
+
+app = FastAPI()
+
+class QueryRequest(BaseModel):
+    query: str
+
+def wrap_result(result, user_query):
+    # Try to extract html, summary, and insights from the result
+    html = result
+    summary = ""
+    insights = ""
+    # If result is a dict with these fields, use them
+    if isinstance(result, dict):
+        html = result.get("html") or result.get("table") or str(result)
+        summary = result.get("summary", "")
+        insights = result.get("insights", "")
+    else:
+        # Try to extract summary/insights from HTML if present
+        summary_match = re.search(r'<div class="summary">(.*?)</div>', str(result), re.DOTALL)
+        if summary_match:
+            summary = summary_match.group(1).strip()
+        insights_match = re.search(r'<div class="insights">(.*?)</div>', str(result), re.DOTALL)
+        if insights_match:
+            insights = insights_match.group(1).strip()
+    return {
+        "status": "success",
+        "error": None,
+        "formatted_data": {
+            "html": html,
+            "summary": summary,
+            "insights": insights
+        }
+    }
+
+@app.get("/")
+def read_root():
+    return {"message": "Gold Loan Analytics API is running."}
+
+@app.post("/analyze")
+async def analyze(request: QueryRequest):
+    user_query = request.query
+    loading_instructions = f"""
+    loan_df = pd.read_csv('{CUSTOMER_SUMMARY_PATH}')
+    payment_df = pd.read_csv('{PAYMENT_SUMMARY_PATH}')
+    """
+    try:
+        result, metrics = run_analysis(user_query, loading_instructions)
+        # Comment out the current response formatting logic
+        # wrapped = wrap_result(result, user_query)
+        # return {"result": wrapped}
+        # Return the raw output from the Code Executor
+        return {"result": result}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "result": {
+                    "status": "error",
+                    "error": str(e),
+                    "formatted_data": None
+                }
+            }
+        )
+
 if __name__ == "__main__":
-    main()
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
