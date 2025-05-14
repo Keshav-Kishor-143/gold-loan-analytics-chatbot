@@ -43,6 +43,7 @@ async def get_schema_info():
 
 def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_str):
     """Create and configure the analysis crew with all necessary agents and tasks"""
+    temp_dir = Path('./temp_dir')
     
     code_interpreter = CodeInterpreterTool()
     
@@ -62,18 +63,18 @@ def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_
     
     # 2. Data Retriever Agent - Retrieves filtered data based on plan
     data_retriever = Agent(
-        role='Data Retriever',
-        goal='Retrieve filtered data from database based on STEP 1 of the plan',
-        backstory="""
-            You are a database expert who specializes in efficient data retrieval.
-            You take a plan and translate it into SQL queries that filter data at a basic level.
-            You ensure only the necessary data is retrieved to answer the query.
-            You return the SQL query and its results.
-        """,
-        verbose=True,
-        allow_delegation=False,
-        llm=llm,
-        tools=[db_query_tool]  # Pass the StructuredTool directly
+    role='Data Retriever',
+    goal='Retrieve filtered data from database and save to CSV files',
+    backstory="""
+        You are a database expert who specializes in efficient data retrieval.
+        You take a plan and translate it into SQL queries that filter data at a basic level.
+        You ensure only the necessary data is retrieved and saved to CSV files for further analysis.
+        You return both the SQL queries used and the paths to the saved CSV files.
+    """,
+    verbose=True,
+    allow_delegation=False,
+    llm=llm,
+    tools=[db_query_tool]
     )
     
     # 3. Code Generator Agent - Creates detailed Python code
@@ -141,12 +142,26 @@ def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_
     
     # Task 2: Data Retrieval Task - Retrieve filtered data
     data_retrieval_task = Task(
-        description="""
-        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1), generate and execute SQL queries using the db_query_tool.
-        Return both the SQL query and the results.
+        description=f"""
+        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1):
+        
+        1. Generate SQL queries that implement the basic filtering described in STEP 1
+        2. Execute each query using the database_query_tool with save_csv=True
+        3. Use the temp_dir path provided in the inputs: "{temp_dir}"
+        
+        If you need data from multiple tables:
+        - Use '_customers' suffix for Loan_Customer_Summary data
+        - Use '_payments' suffix for Loan_Payment_Summary data
+        
+        For each query, provide:
+        1. The SQL query used
+        2. The number of rows retrieved
+        3. The path to the saved CSV file
+        
+        This information will be passed to the Code Generator agent.
         """,
         agent=data_retriever,
-        expected_output="SQL query and retrieved data",
+        expected_output="SQL queries, row counts, and CSV file paths",
         context=[planning_task],
     )
     
@@ -184,7 +199,7 @@ async def run_analysis(user_query):
 if __name__ == "__main__":
     load_dotenv()
     llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
-    user_query = "Analyze loan distribution by customer type for last year"
+    user_query = "Analyze loan distribution by customer type and branch"
     
     # Create and run the event loop properly
     loop = asyncio.new_event_loop()
