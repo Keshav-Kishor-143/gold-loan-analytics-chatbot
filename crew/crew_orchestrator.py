@@ -1,3 +1,4 @@
+
 import os
 import sys
 from pathlib import Path
@@ -8,16 +9,12 @@ from crewai import Crew, Agent, Task
 from crewai_tools import CodeInterpreterTool
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-import logging
 
 # Import the correct path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from crew.db_tools import db_query_tool, init_db_connection
+from crew.db_tools import db_query_tool
 from connection.dbConnection import execute_query
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 async def get_schema_info():
     """Get schema information for the database tables"""
@@ -79,6 +76,35 @@ def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_
         tools=[db_query_tool]  # Pass the StructuredTool directly
     )
     
+    # 3. Code Generator Agent - Creates detailed Python code
+    code_generator = Agent(
+        role='Code Generator',
+        goal='Generate Python code for detailed data processing',
+        backstory="""
+            You are a Python expert who specializes in data analysis code generation.
+            You take a plan and create efficient Python code that processes data to answer specific queries.
+            Your code is clean, well-commented, and focused on producing exactly what's needed.
+        """,
+        verbose=True,
+        allow_delegation=False,
+        llm=llm
+    )
+    
+    # 4. Code Executor Agent - Executes the generated code
+    code_executor = Agent(
+        role='Code Executor',
+        goal='Execute generated Python code and return results',
+        backstory="""
+            You are a Python execution specialist who runs code to process data.
+            You take generated code and filtered data and execute it to produce final results.
+            You ensure all operations are performed correctly and return clean, formatted results.
+        """,
+        verbose=True,
+        allow_delegation=False,
+        llm=llm,
+        tools=[code_interpreter]
+    )
+    
     # Task 1: Planning Task - Create two-step plan
     planning_task = Task(
         description=f"""
@@ -116,17 +142,8 @@ def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_
     # Task 2: Data Retrieval Task - Retrieve filtered data
     data_retrieval_task = Task(
         description="""
-        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1), generate and execute SQL queries.
-        
-        IMPORTANT: When using the database_query_tool, follow these exact steps:
-        1. Formulate your SQL query based on STEP 1 of the plan
-        2. Use the database_query_tool with your SQL query
-        3. Wait for the results before proceeding
-        
-        For example, if you need to retrieve customer data, you might use:
-        SELECT * FROM Loan_Customer_Summary LIMIT 10
-        
-        Return both the SQL query you used and the results you obtained.
+        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1), generate and execute SQL queries using the db_query_tool.
+        Return both the SQL query and the results.
         """,
         agent=data_retriever,
         expected_output="SQL query and retrieved data",
@@ -138,7 +155,7 @@ def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_
         agents=[planner, data_retriever],
         tasks=[planning_task, data_retrieval_task],
         verbose=True,
-        process_type="sequential"  # Change from async to sequential
+        process_type="async"
     )
     
     # Execute the crew
@@ -156,26 +173,18 @@ async def run_analysis(user_query):
     load_dotenv()
     llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
     
-    # Initialize database connection first
-    logger.info("Initializing database connection...")
-    await init_db_connection()
-    logger.info("Database connection initialized successfully")
-    
-    # Get schema info
-    logger.info("Retrieving schema information...")
+    # Get schema info first
     customers_schema_str, payments_schema_str = await get_schema_info()
-    logger.info("Schema information retrieved successfully")
     
     # Then create and run the crew
-    logger.info("Creating and running analysis crew...")
     result = create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_str)
-    logger.info("Analysis crew completed successfully")
     return result
+
 
 if __name__ == "__main__":
     load_dotenv()
     llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
-    user_query = "Analyze loan distribution by customer type and branch for the last month"
+    user_query = "Analyze loan distribution by customer type for last year"
     
     # Create and run the event loop properly
     loop = asyncio.new_event_loop()
@@ -183,16 +192,12 @@ if __name__ == "__main__":
     
     try:
         # Run the analysis
-        logger.info("Starting analysis...")
         result = loop.run_until_complete(run_analysis(user_query))
-        print("Analysis Result:")
         print(result)
     except Exception as e:
-        logger.error(f"Error running analysis: {str(e)}")
         print(f"Error running analysis: {str(e)}")
     finally:
         # Clean up resources
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
-        logger.info("Analysis completed and resources cleaned up")
         print("Analysis completed and resources cleaned up")
