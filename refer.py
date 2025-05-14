@@ -1,181 +1,152 @@
-import json
-from crewai import Agent, Task, Crew
-from langchain_openai import ChatOpenAI
-from langchain_experimental.tools.python.tool import PythonAstREPLTool
 import os
+from crewai import Crew, Agent, Task
+from textwrap import dedent
+from crewai_tools import CodeInterpreterTool
 from dotenv import load_dotenv
-from tools.idrp_tools import IDRPTool
+from langchain_openai import ChatOpenAI
+from openai import OpenAI
+import pandas as pd
  
-def execute_crew_query(query: str, llm_instance: ChatOpenAI, inventory_tools: list, sales_tools: list) -> str:
-    """
-    Execute crew workflow with proper validation and separation of concerns:
-    1. Analyzer+Planner validates query and creates plan if valid
-    2. Executor uses tools to get raw data
-    3. Formatter presents the data in a user-friendly way
-    4. Master manages the flow
-    """
-    # Generate tool schema for analyzer and planner
-    tool_schema = {
-        "tools": [
-            {"name": tool.name, "description": tool.description}
-            for tool in (inventory_tools + sales_tools)
-        ]
-    }
- 
- 
-    # Query Analyzer and Planner Agent
-    analyzer_planner = Agent(
-        role="Query Analyzer & Planner",
-        goal="Validate queries and create structured execution plans for valid ones",
-        backstory=f"""You have two responsibilities:
-        1. Analyze if queries are valid and within system scope
-        2. If valid, create a plan for execution
-       
-        Available Tools Schema:
-        {json.dumps(tool_schema, indent=2)}
-       
-        Validation Rules:
-        1. Query must be about inventory or sales data
-        2. Product codes must be in SPGR format
-        3. Location names must be valid
-        4. Query must be clear and actionable
-       
-        If query is invalid, return a clear error message.
-        If valid, create and return a detailed plan(sequential tool execution plan and data processing plan) for the executor.""",
-        allow_delegation=False,
-        verbose=True,
-        llm=llm_instance
-    )
- 
-    # Executor Agent
-    executor_agent = Agent(
-        role="DRP Executor",
-        goal="Execute plans using tools and return raw data",
-        backstory="""You execute plans by using the appropriate tools.
-        Your job is to get the data and return it as it.""",
-        tools=inventory_tools + sales_tools,
-        allow_delegation=False,
-        verbose=True,
-        llm=llm_instance
-    )
- 
-    # Formatter Agent
-    formatter_agent = Agent(
-        role="Response Formatter",
-        goal="Format responses in a clear and consistent manner",
-        backstory="""You take raw data or error messages and format them for end users.
-       
-        Formatting Rules:
-        1. Use markdown for structure
-        2. Use bullet points for lists
-        3. Format product codes in single quotes
-        4. Keep metrics in original numeric form
-        5. Create clear error messages for invalid queries""",
-        allow_delegation=False,
-        verbose=True,
-        llm=llm_instance
-    )
- 
-    # Analysis and Planning Task
-    analysis_planning_task = Task(
-        description=f"""
-        For this query: {query}
-       
-        1. First, analyze if the query is valid:
-           - Must be about inventory or sales or both
-           - Must have valid input parameters for tools (if any)
-           - Must be clear and actionable
-       
-        2. If valid, create an tool execution plan first:
-           - What tools to use and in what order
-           - Which tools to use
-           - What parameters to pass
-           - What is expected output
-        3. If query requires any processing create a separate plan for processing(if any filtration, sorting, aggregation, etc required)
-        4. If invalid, return an error message explaining why
+def create_analysis_crew(user_query, loan_customers_df, loan_payment_df, code_interpreter, llm):
+    """Create and configure the analysis crew with all necessary agents and tasks"""
+   
+    # Convert DataFrames to string representations
+    loan_customers_head = loan_customers_df.head().to_string()
+    loan_customers_dtypes = str(loan_customers_df.dtypes)
+    loan_customers_shape = str(loan_customers_df.shape)
+   
+    loan_payment_head = loan_payment_df.head().to_string()
+    loan_payment_dtypes = str(loan_payment_df.dtypes)
+    loan_payment_shape = str(loan_payment_df.shape)
+   
+    # Code Generator Agent - Creates execution plan
+    code_generator = Agent(
+        role='Analysis Planner',
+        goal='Create detailed execution plan for data analysis based on user query',
+        backstory="""
+            You are an expert data analyst who excels at planning complex data analyses.
+            You examine data structures and create detailed execution plans that specify
+            exactly what operations to perform, what columns to use, and what insights to extract.
+            Your plans are precise, executable, and focused on answering the specific query.
         """,
-        expected_output="if valid, return a detailed plan for the executor, if invalid, return an error message for formatter",
-        agent=analyzer_planner
+        verbose=True,
+        allow_delegation=False,
+        llm=llm,
+        tools=[code_interpreter]
     )
  
-    # Execution Task (only created if query is valid)
+    # Code Executor Agent - Executes the plan
+    code_executor = Agent(
+        role='Plan Executor',
+        goal='Execute analysis plans and return filtered DataFrame results',
+        backstory="""
+            You are a Python expert specializing in pandas execution. You take analysis
+            plans and transform them into efficient code that produces exactly the results
+            needed. You ensure all operations are performed correctly and return clean,
+            filtered DataFrames that directly answer the user's query.
+        """,
+        verbose=True,
+        allow_delegation=False,
+        llm=llm,
+        tools=[code_interpreter]
+    )
+   
+    # Code Generation Task - Creates the execution plan
+    code_generation_task = Task(
+        description=f"""
+        Based on the user query: "{user_query}"
+       
+        Examine the provided DataFrame information and create a detailed execution plan that:
+       
+        1. Specifies exactly what operations to perform (filtering, grouping, joining, etc.)
+        2. Lists the exact columns to use from each DataFrame
+        3. Details any calculations or transformations needed
+        4. Outlines how to join the DataFrames using LoanId when necessary
+        5. Describes what the final output should look like
+       
+        DataFrame Information:
+       
+        loan_customers_df shape: {loan_customers_shape}
+        loan_customers_df head:
+        {loan_customers_head}
+       
+        loan_customers_df dtypes:
+        {loan_customers_dtypes}
+       
+        loan_payment_df shape: {loan_payment_shape}
+        loan_payment_df head:
+        {loan_payment_head}
+       
+        loan_payment_df dtypes:
+        {loan_payment_dtypes}
+       
+        Your plan should be specific enough that someone else could implement it exactly.
+        DO NOT write actual code - just create a clear, step-by-step execution plan.
+       
+        Return your plan as a structured document with numbered steps.
+        """,
+        agent=code_generator,
+        expected_output="Detailed execution plan for data analysis"
+    )
+   
+    # Code Execution Task - Executes the plan and returns DataFrame
     execution_task = Task(
-        description=f"""
-        Execute the plan for query: {query}
-        IMPORTANT:
-        1. Call tools in the EXACT order specified in the plan
-        2. Use ONLY the parameters mentioned in the plan
-        3. Apply any filtering/sorting EXACTLY as specified
-        4. DO NOT skip any processing steps
-        5. Return complete and processed data
+        description="""
+        Take the execution plan from the Analysis Planner and implement it using pandas.
+       
+        You need to load the data first with:
+        ```python
+        import pandas as pd
+        loan_customers_df = pd.read_csv('csv/customer_summary.csv')
+        loan_payment_df = pd.read_csv('csv/payment_summary.csv')
+        ```
+       
+        Then:
+        1. Follow the plan exactly, using the specified operations and columns
+        2. Write clean, efficient pandas code that implements each step
+        3. Join DataFrames using LoanId when needed
+        4. Return the top 5 rows of the final filtered DataFrame
+        5. Format any monetary values with the Indian Rupee symbol (₹)
+       
+        Your code should be lightweight and focused on producing exactly what's needed.
+        Return only the final DataFrame head() that answers the user query.
         """,
-        expected_output="Complete processed data after all tool calls and processing steps",
-        agent=executor_agent,
-        context=[analysis_planning_task],
-       
+        agent=code_executor,
+        expected_output="DataFrame with top 5 rows answering the query",
+        context=[code_generation_task]
     )
- 
-    # Formatting Task
-    formatting_task = Task(
-        description=f"""
-        Format the response for: {query}
-       
-        If you receive an error message, format it clearly.
-        If you receive raw data, format it according to the rules:
-        1. Use markdown
-        2. Use bullet points for lists
-        3. Format product codes in single quotes
-        4. Keep numeric values as is
-       
-        Return the formatted response to the user.
-        """,
-        expected_output="return formatted response to user",
-        context=[analysis_planning_task, execution_task],
-        agent=formatter_agent
-    )
- 
-    # Create crew with sequential process
+   
+    # Create and return the crew with the correct task order
     crew = Crew(
-        agents=[analyzer_planner, executor_agent, formatter_agent],
-        tasks=[analysis_planning_task, execution_task, formatting_task],
+        agents=[code_generator, code_executor],
+        tasks=[code_generation_task, execution_task],
         verbose=True
     )
- 
-    try:
-        result = crew.kickoff()
-        usage_metrics = crew.usage_metrics
-       
-        # Ensure we have numeric values for metrics
-        metrics = {
-            "total_tokens": int(getattr(usage_metrics, 'total_tokens', 0)),
-            "prompt_tokens": int(getattr(usage_metrics, 'prompt_tokens', 0)),
-            "completion_tokens": int(getattr(usage_metrics, 'completion_tokens', 0)),
-            "successful_requests": int(getattr(usage_metrics, 'successful_requests', 0))
+   
+    # Execute the crew with string representations of the DataFrames
+    result = crew.kickoff(
+        inputs={
+            "user_query": user_query
         }
-        return result,metrics
-    except Exception as e:
-        return f"Error in crew execution: {str(e)}",{}
+    )
+   
+    return result
  
 if __name__ == "__main__":
+    code_interpreter = CodeInterpreterTool()  
     load_dotenv()
-    api_key = os.getenv("OPENAI_API_KEY", '')
+    llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
+    user_query = "Analyze loan distribution by customer type and branch"
+    # print(loan_df.head())
+    # loading_instructions = """
+    try:
+        loan_customers_df = pd.read_csv('csv/customer_summary.csv')
+        loan_payment_df = pd.read_csv('csv/payment_summary.csv')
+        print(f"Data loaded successfully. Customer DF shape: {loan_customers_df.shape}, Payment DF shape: {loan_payment_df.shape}")
+    except Exception as e:
+        print(f"Error loading data: {str(e)}")
+        exit(1)
+    # """
+    result = create_analysis_crew(user_query, loan_customers_df, loan_payment_df, code_interpreter,llm)
+    print(result)
  
-    # Load API specifications
-    with open("openapi.json", "r") as f:
-        openapi_spec = json.load(f)
- 
-    # Initialize tools
-    idrp_tool = IDRPTool(openapi_spec)
-   
-    # Initialize LLM
-    llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=api_key)
-   
-    # Test query
-    query = "What is the current stock at hand for top 3 overselling products in Delhi?"
-    result,metrics = execute_crew_query(
-        query=query,
-        llm_instance=llm,
-        inventory_tools=idrp_tool.inventory_tools,
-        sales_tools=idrp_tool.sales_tools
-    )
-    print("new crew",metrics)

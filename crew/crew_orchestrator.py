@@ -1,199 +1,198 @@
+import os
+import sys
+from pathlib import Path
+import tempfile
+import pandas as pd
+import asyncio
 from crewai import Crew, Agent, Task
-from textwrap import dedent
 from crewai_tools import CodeInterpreterTool
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+import logging
 
-# Initialize the tool
-code_interpreter = CodeInterpreterTool(code_execution_mode="unsafe")  
+# Import the correct path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from crew.db_tools import db_query_tool, init_db_connection
+from connection.dbConnection import execute_query
 
-def create_analysis_crew():
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+async def get_schema_info():
+    """Get schema information for the database tables"""
+    # Get schema for loan_customers table
+    customers_schema_query = """
+    SELECT COLUMN_NAME, DATA_TYPE 
+    FROM INFORMATION_SCHEMA.COLUMNS 
+    WHERE TABLE_NAME = 'Loan_Customer_Summary'
+    """
+    
+    # Get schema for loan_payments table
+    payments_schema_query = """
+    SELECT COLUMN_NAME, DATA_TYPE 
+    FROM INFORMATION_SCHEMA.COLUMNS 
+    WHERE TABLE_NAME = 'Loan_Payment_Summary'
+    """
+    
+    customers_schema = await execute_query(customers_schema_query)
+    payments_schema = await execute_query(payments_schema_query)
+    
+    customers_schema_str = "\n".join([f"{col['COLUMN_NAME']}: {col['DATA_TYPE']}" for col in customers_schema])
+    payments_schema_str = "\n".join([f"{col['COLUMN_NAME']}: {col['DATA_TYPE']}" for col in payments_schema])
+    
+    return customers_schema_str, payments_schema_str
+
+
+def create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_str):
     """Create and configure the analysis crew with all necessary agents and tasks"""
-    # Data Retriever Agent (commented for future use)
-    # data_retriever = Agent(
-    #     role='Data Retriever',
-    #     goal='Retrieve and filter relevant data based on user query intent',
-    #     backstory=dedent("""
-    #         You are an expert in data management and preprocessing. You specialize in 
-    #         understanding user intent from natural language queries and retrieving only
-    #         the most relevant data needed for analysis. You excel at filtering large datasets
-    #         to provide focused, relevant information that directly addresses the user's needs.
-    #     """),
-    #     verbose=True,
-    #     allow_delegation=False,
-    #     tools=[]
-    # )
-    # Code Generator Agent
-    code_generator = Agent(
-        role='Code Generator',
-        goal='Generate optimal Python code for data analysis based on user intent',
-        backstory=dedent("""
-            You are an expert Python programmer specializing in data analysis and visualization.
-            You excel at translating analytical requirements into efficient, well-structured
-            Python code. You have deep knowledge of pandas, numpy, matplotlib, seaborn and other
-            data analysis libraries, and you know how to create insightful analyses that answer
-            specific business questions.
-        """),
+    
+    code_interpreter = CodeInterpreterTool()
+    
+    # 1. Planner Agent - Creates a two-step plan
+    planner = Agent(
+        role='Query Planner',
+        goal='Create a detailed two-step plan for data retrieval and code generation',
+        backstory="""
+            You are an expert data analyst who excels at planning complex data analyses.
+            You create detailed plans that specify what data to retrieve and how to process it.
+            Your plans are precise, executable, and focused on answering specific queries efficiently.
+        """,
         verbose=True,
         allow_delegation=False,
-        tools=[code_interpreter]
+        llm=llm
     )
-  
-    # Code Executor Agent
-    code_executor = Agent(
-        role='Code Executor',
-        goal='Execute and validate Python code for data analysis',
-        backstory=dedent("""
-            You are a Python expert specializing in data analysis and code execution.
-            You ensure that all code runs correctly, handles errors gracefully, and produces
-            accurate results. You have deep knowledge of pandas, numpy, and data visualization
-            libraries, and you excel at debugging and optimizing code.
-        """),
+    
+    # 2. Data Retriever Agent - Retrieves filtered data based on plan
+    data_retriever = Agent(
+        role='Data Retriever',
+        goal='Retrieve filtered data from database based on STEP 1 of the plan',
+        backstory="""
+            You are a database expert who specializes in efficient data retrieval.
+            You take a plan and translate it into SQL queries that filter data at a basic level.
+            You ensure only the necessary data is retrieved to answer the query.
+            You return the SQL query and its results.
+        """,
         verbose=True,
         allow_delegation=False,
-        tools=[code_interpreter]
+        llm=llm,
+        tools=[db_query_tool]  # Pass the StructuredTool directly
     )
-    # Response Formatter Agent (commented out for now)
-    # response_formatter = Agent(
-    #     role='Response Formatter',
-    #     goal='Format analysis results into clear, professional HTML tables with business insights',
-    #     backstory=dedent("""
-    #         You are an expert in data presentation and business communication. You excel at
-    #         transforming complex analytical results into clear, visually appealing HTML tables
-    #         that highlight key insights. You have a strong background in financial reporting 
-    #         and know how to present data insights that drive business decision-making.
-    #     """),
-    #     verbose=True,
-    #     allow_delegation=False,
-    #     tools=[]
-    # )
-    # Data Retrieval Task (commented for future use)
-    # retrieval_task = Task(
-    #     description=f"""
-    #     Based on the following user query:
-    #     \n{user_query}
-    #     1. Load the data using:
-    #     ```python
-    #     import pandas as pd
-    #     {loading_instructions}
-    #     ```
-    #     2. Understand the intent of the user's query and identify what data is relevant.
-    #     3. Filter the dataframes to include only the columns and rows that are directly relevant 
-    #        to answering the query.
-    #     4. Clean and preprocess the data as needed (handling missing values, data type conversions, etc.).
-    #     5. Provide:
-    #        - A concise description of what the user is asking for (the query intent)
-    #        - The filtered dataframe(s) with only the relevant data
-    #        - Any context about the data that would be helpful for analysis
-    #     """,
-    #     agent=data_retriever,
-    #     expected_output="Filtered dataframe with relevant data and query intent explanation."
-    # )
-    # Code Generation Task
-    code_generation_task = Task(
-        description="""
-        Based on the provided user_query and loading_instructions:
-        User Query: {user_query}
-        Loading Instructions: {loading_instructions}
+    
+    # Task 1: Planning Task - Create two-step plan
+    planning_task = Task(
+        description=f"""
+        Based on the user query: "{user_query}"
         
-        You are only allowed to use the following Python libraries for code generation and execution:
-        - pandas
-        - numpy
-        - matplotlib
-        - seaborn
-        - scikit-learn
+        Create a detailed two-step plan that includes:
         
-        Do NOT use any other libraries. If a required library is not in this list, do not use it.
+        STEP 1 - DATA RETRIEVAL PLAN:
+        - Specify what basic filtering should be done (e.g., date ranges, specific customer types)
+        - Identify which tables are needed ([Loan_Customer_Summary], [Loan_Payment_Summary], or both)
+        - Do NOT include any aggregations, complex logic, or joins in this step
+        - The goal is to retrieve a filtered subset of data that contains everything needed for further processing
         
-        IMPORTANT: After loading the DataFrames, you MUST always programmatically inspect their columns and schema (e.g., using df.columns, df.info(), df.head()) before referencing any columns. Never assume or guess column names. Always dynamically adapt your code to the actual DataFrame structure.
+        STEP 2 - CODE GENERATION PLAN:
+        - Specify what detailed operations should be performed (filtering, grouping, joining, etc.)
+        - List the exact columns to use from each table
+        - Detail any calculations or transformations needed
+        - Outline how to join the tables using LoanId when necessary
+        - Describe what the final output should look like
         
-        When you output code, ensure it is a valid, plain Python string (not JSON, not double-escaped, and with single backslashes for newlines). The code should be directly executable and not wrapped or escaped multiple times. Do not use quadruple or double backslashes for newlines.
+        Database Schema Information:
         
-        1. Perform exploratory data analysis (EDA) to understand the data and the user's query intent.
-        2. Generate efficient Python code that performs a deep analysis addressing the user's query.
-        3. Your code should:
-           - Load the data using the provided loading_instructions
-           - Dynamically inspect the DataFrame(s) to determine available columns and types
-           - Filter and preprocess the data as needed to address the query
-           - Apply appropriate statistical methods, aggregations, and calculations
-           - Create relevant visualizations if helpful (using matplotlib or seaborn)
-           - Format all monetary values with the Indian Rupee symbol (₹)
-        4. Make sure the code:
-           - Is clean, well-structured, and commented
-           - Handles potential errors gracefully
-           - Produces clear, actionable insights
-           - Is optimized for performance
-        5. If appropriate, include code to generate insightful visualizations that help answer the query.
-        Output both the generated code and the filtered dataframe(s) relevant to the query.
+        [Loan_Customer_Summary] table:
+        {customers_schema_str}
+        
+        [Loan_Payment_Summary] table:
+        {payments_schema_str}
+        
+        Return your plan as a structured document with clearly labeled STEP 1 and STEP 2 sections.
         """,
-        agent=code_generator,
-        expected_output="A dictionary with keys 'code' (the generated Python code as a string) and 'filtered_df' (the relevant filtered dataframe(s)).",
-        input_variables=["user_query", "loading_instructions"]
+        agent=planner,
+        expected_output="Detailed two-step plan for data retrieval and code generation"
     )
-    # Code Execution Task
-    execution_task = Task(
+    
+    # Task 2: Data Retrieval Task - Retrieve filtered data
+    data_retrieval_task = Task(
         description="""
-        Take the generated code and filtered dataframe(s) from the Code Generator agent:
-        1. Execute the provided Python code using the filtered dataframe(s) as input
-        2. Capture all outputs, including:
-           - Computed values and statistics
-           - Generated visualizations
-           - Any printed results
-        3. If any errors occur:
-           - Identify the root cause
-           - Fix the code if possible
-           - Document the issue if not fixable
-        4. Ensure the execution results directly address the user's original query
-        Return the raw output of the code execution.
+        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1), generate and execute SQL queries.
+        
+        IMPORTANT: When using the database_query_tool, follow these exact steps:
+        1. Formulate your SQL query based on STEP 1 of the plan
+        2. Use the database_query_tool with your SQL query
+        3. Wait for the results before proceeding
+        
+        For example, if you need to retrieve customer data, you might use:
+        SELECT * FROM Loan_Customer_Summary LIMIT 10
+        
+        Return both the SQL query you used and the results you obtained.
         """,
-        agent=code_executor,
-        expected_output="Raw output of the executed code."
+        agent=data_retriever,
+        expected_output="SQL query and retrieved data",
+        context=[planning_task],
     )
-    # Response Formatting Task (commented out for now)
-    # formatting_task = Task(
-    #     description="""
-    #     Format the analysis results from the Code Executor into a professional HTML table:
-    #     1. Extract the key insights from the analysis results
-    #     2. Create a well-structured HTML table that:
-    #        - Has a clear header with the analysis title
-    #        - Presents data in a logical, easy-to-read format
-    #        - Uses appropriate styling for readability
-    #        - Highlights the most important findings
-    #     3. Include a brief business insight summary below the table that:
-    #        - Explains the key takeaways in business terms
-    #        - Points out trends, patterns, or anomalies
-    #        - Suggests potential business implications
-    #     The output should be in proper HTML format that can be directly embedded in a web page,
-    #     with proper styling for the table and appropriate formatting for the business insight.
-    #     """,
-    #     agent=response_formatter,
-    #     expected_output="Formatted HTML table with business insights."
-    # )
-    # Set up task dependencies
-    # code_generation_task.context = [retrieval_task]  # For future use
-    execution_task.context = [code_generation_task]
-    # formatting_task.context = [execution_task]  # For future use
-    # Create and return the crew with the correct task order
-    return Crew(
-        agents=[code_generator, code_executor],
-        tasks=[code_generation_task, execution_task],
-        verbose=True
+    
+    # Create the crew - start with just planning and data retrieval
+    crew = Crew(
+        agents=[planner, data_retriever],
+        tasks=[planning_task, data_retrieval_task],
+        verbose=True,
+        process_type="sequential"  # Change from async to sequential
     )
-
-def run_analysis(user_query, loading_instructions):
-    """Run the analysis using the crew and return both result and usage metrics"""
-    crew = create_analysis_crew()
-    try:
-        # Pass user_query and loading_instructions as input to kickoff
-        result = crew.kickoff(inputs={
-            "user_query": user_query,
-            "loading_instructions": loading_instructions
-        })
-        usage_metrics = crew.usage_metrics
-        metrics = {
-            "total_tokens": int(getattr(usage_metrics, 'total_tokens', 0)),
-            "prompt_tokens": int(getattr(usage_metrics, 'prompt_tokens', 0)),
-            "completion_tokens": int(getattr(usage_metrics, 'completion_tokens', 0)),
-            "successful_requests": int(getattr(usage_metrics, 'successful_requests', 0))
+    
+    # Execute the crew
+    result = crew.kickoff(
+        inputs={
+            "user_query": user_query
         }
-        return result, metrics
+    )
+    
+    return result
+
+
+async def run_analysis(user_query):
+    """Run the analysis using the crew and return the result"""
+    load_dotenv()
+    llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
+    
+    # Initialize database connection first
+    logger.info("Initializing database connection...")
+    await init_db_connection()
+    logger.info("Database connection initialized successfully")
+    
+    # Get schema info
+    logger.info("Retrieving schema information...")
+    customers_schema_str, payments_schema_str = await get_schema_info()
+    logger.info("Schema information retrieved successfully")
+    
+    # Then create and run the crew
+    logger.info("Creating and running analysis crew...")
+    result = create_analysis_crew(user_query, llm, customers_schema_str, payments_schema_str)
+    logger.info("Analysis crew completed successfully")
+    return result
+
+if __name__ == "__main__":
+    load_dotenv()
+    llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
+    user_query = "Analyze loan distribution by customer type and branch for the last month"
+    
+    # Create and run the event loop properly
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        # Run the analysis
+        logger.info("Starting analysis...")
+        result = loop.run_until_complete(run_analysis(user_query))
+        print("Analysis Result:")
+        print(result)
     except Exception as e:
-        return f"Error in crew execution: {str(e)}", {}
+        logger.error(f"Error running analysis: {str(e)}")
+        print(f"Error running analysis: {str(e)}")
+    finally:
+        # Clean up resources
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+        logger.info("Analysis completed and resources cleaned up")
+        print("Analysis completed and resources cleaned up")
