@@ -5,3 +5,5 @@ crewai-tools>=0.1.0
 openai>=1.0.0
 langchain-openai>=0.0.1 
 matplotlib>=3.0.0
+pymssql==2.2.7
+pyodbc==4.0.39

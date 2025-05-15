@@ -17,7 +17,7 @@ def create_code_generator_agent():
         tools=[]  # Add any specific tools needed for code generation
     )
 
-def create_code_generation_task(agent):
+def create_code_generation_task(intent,table_schema,agent):
     """Create the code generation task"""
     return Task(
         description="""

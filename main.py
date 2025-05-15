@@ -1,5 +1,7 @@
 import os
 import sys
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 import pandas as pd
 import json
 import matplotlib.pyplot as plt
@@ -8,7 +10,11 @@ from dotenv import load_dotenv
 from io import StringIO
 import contextlib
 import locale
+
+from pydantic import BaseModel
+import uvicorn
 from crew.crew_orchestrator import run_analysis
+from utils.dbConnection import execute_query
 
 # Load environment variables from .env file
 load_dotenv()
@@ -189,34 +195,89 @@ def load_datasets():
         print(f"Error loading datasets: {str(e)}")
         return None, None
 
-def main():
-    # Load datasets
-    loan_df, payment_df = load_datasets()
-    if loan_df is None or payment_df is None:
-        print("Failed to load datasets. Exiting...")
-        return
+# def main():
+#     # Load datasets
+#     loan_df, payment_df = load_datasets()
+#     if loan_df is None or payment_df is None:
+#         print("Failed to load datasets. Exiting...")
+#         return
     
-    # Show example queries
-    print("\nExample queries you can try:")
-    print("1. Analyze loan distribution by customer type and branch")
-    print("2. Find the average loan amount by scheme")
-    print("3. Compare loan status patterns by branch")
-    print("4. Identify NPA patterns across different branches") 
-    print("5. Analyze relationships between loan details and payment behavior")
+#     # Show example queries
+#     print("\nExample queries you can try:")
+#     print("1. Analyze loan distribution by customer type and branch")
+#     print("2. Find the average loan amount by scheme")
+#     print("3. Compare loan status patterns by branch")
+#     print("4. Identify NPA patterns across different branches") 
+#     print("5. Analyze relationships between loan details and payment behavior")
     
-    # Get user query
-    user_query = input("\nEnter your analysis query: ")
+#     # Get user query
+#     user_query = input("\nEnter your analysis query: ")
     
-    # Create loading instructions
-    loading_instructions = f"""
-    loan_df = pd.read_csv('{CUSTOMER_SUMMARY_PATH}')
-    payment_df = pd.read_csv('{PAYMENT_SUMMARY_PATH}')
-    """
+#     # Create loading instructions
+#     loading_instructions = f"""
+#     loan_df = pd.read_csv('{CUSTOMER_SUMMARY_PATH}')
+#     payment_df = pd.read_csv('{PAYMENT_SUMMARY_PATH}')
+#     """
     
-    # Run the analysis using the crew orchestrator
-    result = run_analysis(user_query, loading_instructions)
-    print("\nAnalysis Results:")
-    print(result)
+#     # Run the analysis using the crew orchestrator
+#     result = run_analysis(user_query, loading_instructions)
+#     print("\nAnalysis Results:")
+#     print(result)
+
+# if __name__ == "__main__":
+#     main()
+from fastapi import Request
+
+app = FastAPI()
+
+class QueryRequest(BaseModel):
+    query: str
+
+
+@app.get("/")
+def read_root():
+    return {"message": "Gold Loan Analytics API is running."}
+
+
+def load_schema_from_file(schema_file_path="./schema/views_schema.json"):
+    """Load the table schema from a JSON file"""
+    try:
+        with open(schema_file_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        return f"Error loading schema: {str(e)}" 
+    
+@app.post("/analyze")
+async def analyze(request: QueryRequest):
+    user_query = request.query
+    # loading_instructions = f"""
+    # loan_df = pd.read_csv('{CUSTOMER_SUMMARY_PATH}')
+    # payment_df = pd.read_csv('{PAYMENT_SUMMARY_PATH}')
+    # """
+    schema=load_schema_from_file()
+   
+    try:
+        result = run_analysis(user_query, schema)
+        # Comment out the current response formatting logic
+        # wrapped = wrap_result(result, user_query)
+        # return {"result": wrapped}
+        # Return the raw output from the Code Executor
+        sql_query = result['sql_query']
+        print("SQL Query:", sql_query)
+        retrieved_data=await execute_query(sql_query)
+        print("Retrieved Data:", retrieved_data)
+        return {"result": result}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "result": {
+                    "status": "error",
+                    "error": str(e),
+                    "formatted_data": None
+                }
+            }
+        )
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

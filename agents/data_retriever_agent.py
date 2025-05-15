@@ -1,5 +1,10 @@
-from crewai import Agent, Task
+# from crewai import Agent, Task
+# from textwrap import dedent
+
 from textwrap import dedent
+
+from crewai import Agent, Task
+from utils.db_tools import db_query_tool
 
 def create_data_retriever_agent():
     return Agent(
@@ -10,38 +15,35 @@ def create_data_retriever_agent():
             understanding user intent from natural language queries and retrieving only
             the most relevant data needed for analysis. You excel at filtering large datasets
             to provide focused, relevant information that directly addresses the user's needs.
+            You can call external Python functions to load or retrieve data as needed.
         """),
         verbose=True,
         allow_delegation=False,
-        tools=[]  # Add any specific tools needed for data retrieval
+        tools=[db_query_tool]  # Register the external function as a tool
     )
 
-def create_retrieval_task(user_query, loading_instructions, agent):
+def create_retrieval_task(sql_query,agent):
     """Create the data retrieval task"""
     return Task(
         description=f"""
-        Based on the following user query:
-        
-        {user_query}
-        
-        1. Load the data using:
-        ```python
-        import pandas as pd
-        {loading_instructions}
-        ```
-        
-        2. Understand the intent of the user's query and identify what data is relevant.
-        
-        3. Filter the dataframes to include only the columns and rows that are directly relevant 
-           to answering the query.
-        
-        4. Clean and preprocess the data as needed (handling missing values, data type conversions, etc.).
-        
-        5. Provide:
-           - A concise description of what the user is asking for (the query intent)
-           - The filtered dataframe(s) with only the relevant data
-           - Any context about the data that would be helpful for analysis
+        Using the DATA RETRIEVAL PLAN from the Planner (especially STEP 1):
+       
+        2. Execute each query {sql_query} using the database_query_tool with save_csv=True
+        4. Save the file like filtered_data_<suffix>.csv
+       
+        If you need data from multiple tables:
+        - Use 'loan_customers' suffix for Loan_Customer_Summary data
+        - Use 'loan_payments' suffix for Loan_Payment_Summary data
+       
+        For each query, provide:
+        1. The SQL query used
+        2. The metadata about the retrieved data (row count, columns, etc.)
+        3. The path to the saved CSV file
+       
+        IMPORTANT: Do NOT include the full dataset in your response, only metadata.
+        The actual data is saved to CSV files that will be used by the Code Generator.
         """,
         agent=agent,
-        expected_output="Filtered dataframe with relevant data and query intent explanation."
-    ) 
+        expected_output="SQL queries, metadata, and CSV file paths",
+
+    )
