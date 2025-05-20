@@ -253,7 +253,7 @@ def create_enhanced_code_generation_task(agent: Agent) -> Task:
        from pathlib import Path
        
        # Load the DataFrame
-       df = pd.read_csv(r"<dataframe_info.path>")
+       df = pd.read_csv("csv/customer_summary.csv")
        print("Loaded DataFrame successfully")
        
        # Print sample data
@@ -419,7 +419,7 @@ def test_crew_agents():
         response_formatter = create_response_formatter_agent(llm=llm)
 
         # Sample query and CSV files
-        user_query = "Analyze loan distribution by customer type and branch"
+        user_query = "What is the frequency and trend of loan disbursement by customer types and branch?"
         csv_files = {
             "loan_df": "csv/customer_summary.csv",
             "payment_df": "csv/payment_summary.csv"
@@ -436,7 +436,7 @@ def test_crew_agents():
         execution_task = create_execution_task(code_executor)
         formatting_task = create_formatting_task(response_formatter)
 
-        # Connect the tasks in sequence
+        # Connect the tasks in sequence and pass required data
         code_generation_task.context = [retrieval_task]
         execution_task.context = [code_generation_task]
         formatting_task.context = [execution_task]
@@ -451,7 +451,7 @@ def test_crew_agents():
         )
 
         # Run the crew and get the result
-        result = crew.kickoff(inputs={"user_query": user_query})
+        result = crew.kickoff(inputs={"user_query": user_query, "csv_files": csv_files})
         
         # Extract and print the formatted HTML document
         if hasattr(result, 'raw'):
@@ -476,6 +476,7 @@ def test_crew_agents():
                     print("-"*20)
                     print(html_doc)
                 else:
+                    
                     print("\nNo HTML document found in output")
             else:
                 print("\nUnexpected output format from formatter:")

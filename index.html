@@ -1,207 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Loan Analysis Report</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            background-color: #f4f4f4;
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-            background-color: #fff;
-        }
-        th, td {
-            padding: 12px;
-            text-align: right;
-            border: 1px solid #ddd;
-        }
-        th {
-            background-color: #4CAF50;
-            color: white;
-        }
-        tr:nth-child(even) {
-            background-color: #f2f2f2;
-        }
-        tr:hover {
-            background-color: #ddd;
-        }
-        .insights {
-            margin: 20px 0;
-            padding: 10px;
-            background-color: #e7f3fe;
-            border-left: 6px solid #2196F3;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loan Analysis Report</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f4f4f4;
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      background-color: #fff;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: right;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    tr:hover {
+      background-color: #ddd;
+    }
+    .insights {
+      margin: 20px 0;
+      padding: 10px;
+      background-color: #e7f3fe;
+      border-left: 6px solid #2196F3;
+    }
+  </style>
 </head>
 <body>
-    <h1>Loan Analysis Report</h1>
-    <div class="insights">
-        <h2>Key Insights</h2>
-        <ul>
-            <li>The total loan amount across all branches is significant, with the highest being ₹54,460,696.00 in branch PN.</li>
-            <li>Branch MH has the highest loan count of 681, indicating a strong customer base.</li>
-            <li>Branch NP shows a high average loan amount of ₹123,403.51, suggesting a focus on larger loans.</li> 
-            <li>Standard deviation in loan amounts varies significantly, with branch PN having the highest at ₹243,413.60, indicating diverse loan sizes.</li>
-        </ul>
-    </div>
-    <table class="dataframe data-table">
-        <thead>
-            <tr style="text-align: right;">
-                <th>CustomerType</th>
-                <th>BranchName</th>
-                <th>TotalLoanAmount</th>
-                <th>AverageLoanAmount</th>
-                <th>LoanCount</th>
-                <th>MeanLoanAmount</th>
-                <th>MedianLoanAmount</th>
-                <th>StdDevLoanAmount</th>
-                <th>PercentageOfTotal</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td>1</td>
-                <td>KH</td>
-                <td>₹13,536,101.00</td>
-                <td>₹95,324.65</td>
-                <td>142</td>
-                <td>₹95,324.65</td>
-                <td>₹51,075.00</td>
-                <td>₹121,899.69</td>
-                <td>3.951998</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>KM</td>
-                <td>₹35,372,763.00</td>
-                <td>₹96,121.64</td>
-                <td>368</td>
-                <td>₹96,121.64</td>
-                <td>₹50,000.00</td>
-                <td>₹165,836.24</td>
-                <td>10.327426</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>MH</td>
-                <td>₹48,712,306.00</td>
-                <td>₹71,530.55</td>
-                <td>681</td>
-                <td>₹71,530.55</td>
-                <td>₹30,000.00</td>
-                <td>₹126,448.01</td>
-                <td>14.222036</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>NP</td>
-                <td>₹35,170,000.00</td>
-                <td>₹123,403.51</td>
-                <td>285</td>
-                <td>₹123,403.51</td>
-                <td>₹56,000.00</td>
-                <td>₹180,666.62</td>
-                <td>10.268227</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>NR</td>
-                <td>₹14,004,759.00</td>
-                <td>₹115,741.81</td>
-                <td>121</td>
-                <td>₹115,741.81</td>
-                <td>₹60,000.00</td>
-                <td>₹145,866.13</td>
-                <td>4.088827</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>PN</td>
-                <td>₹54,460,696.00</td>
-                <td>₹114,654.10</td>
-                <td>475</td>
-                <td>₹114,654.10</td>
-                <td>₹50,000.00</td>
-                <td>₹243,413.60</td>
-                <td>15.900335</td>
-            </tr>
-            <tr>
-                <td>1</td>
-                <td>UL</td>
-                <td>₹35,892,394.00</td>
-                <td>₹164,644.01</td>
-                <td>218</td>
-                <td>₹164,644.01</td>
-                <td>₹97,562.50</td>
-                <td>₹192,879.01</td>
-                <td>10.479137</td>
-            </tr>
-            <tr>
-                <td>2</td>
-                <td>KM</td>
-                <td>₹36,105,926.00</td>
-                <td>₹37,846.88</td>
-                <td>954</td>
-                <td>₹37,846.88</td>
-                <td>₹23,215.00</td>
-                <td>₹41,305.47</td>
-                <td>10.541480</td>
-            </tr>
-            <tr>
-                <td>2</td>
-                <td>MH</td>
-                <td>₹5,179,549.00</td>
-                <td>₹55,101.59</td>
-                <td>94</td>
-                <td>₹55,101.59</td>
-                <td>₹23,250.00</td>
-                <td>₹133,986.09</td>
-                <td>1.512220</td>
-            </tr>
-            <tr>
-                <td>2</td>
-                <td>NP</td>
-                <td>₹37,052,500.00</td>
-                <td>₹41,307.13</td>
-                <td>897</td>
-                <td>₹41,307.13</td>
-                <td>₹24,000.00</td>
-                <td>₹62,962.66</td>
-                <td>10.817841</td>
-            </tr>
-            <tr>
-                <td>2</td>
-                <td>PN</td>
-                <td>₹21,263,798.00</td>
-                <td>₹36,788.58</td>
-                <td>578</td>
-                <td>₹36,788.58</td>
-                <td>₹22,023.00</td>
-                <td>₹54,053.57</td>
-                <td>6.208175</td>
-            </tr>
-            <tr>
-                <td>2</td>
-                <td>UL</td>
-                <td>₹5,762,084.00</td>
-                <td>₹40,865.84</td>
-                <td>141</td>
-                <td>₹40,865.84</td>
-                <td>₹20,000.00</td>
-                <td>₹57,270.20</td>
-                <td>1.682297</td>
-            </tr>
-        </tbody>
-    </table>
+  <h1>Loan Analysis Report</h1>
+  <div class="insights">
+    <h2>Key Insights</h2>
+    <p>
+      The analysis of loan data reveals significant trends across different
+      branches and customer types. The total loan amount across all branches is
+      substantial, with the highest average loan amounts observed in specific
+      branches. Notably, the percentage of total loans varies significantly,
+      indicating potential areas for targeted marketing and risk assessment.
+    </p>
+  </div>
+  <table class="dataframe data-table">
+    <thead>
+      <tr>
+        <th>CustomerType</th>
+        <th>BranchName</th>
+        <th>TotalLoanAmount</th>
+        <th>AverageLoanAmount</th>
+        <th>LoanCount</th>
+        <th>TotalOutstandingAmount</th>
+        <th>PercentageOfTotal</th>
+        <th>MeanLoanAmount</th>
+        <th>MedianLoanAmount</th>
+        <th>StdDevLoanAmount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>KH</td><td>₹13,536,101.00</td><td>₹95,324.65</td><td>142</td><td>₹13,568,104.00</td><td>3.951998</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>KM</td><td>₹35,372,763.00</td><td>₹96,121.64</td><td>368</td><td>₹35,897,515.00</td><td>10.327426</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>MH</td><td>₹48,712,306.00</td><td>₹71,530.55</td><td>681</td><td>₹49,110,553.00</td><td>14.222036</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>NP</td><td>₹35,170,000.00</td><td>₹123,403.51</td><td>285</td><td>₹35,494,868.00</td><td>10.268227</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>NR</td><td>₹14,004,759.00</td><td>₹115,741.81</td><td>121</td><td>₹14,061,352.00</td><td>4.088827</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>PN</td><td>₹54,460,696.00</td><td>₹114,654.10</td><td>475</td><td>₹54,653,988.00</td><td>15.900335</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>1</td><td>UL</td><td>₹35,892,394.00</td><td>₹164,644.01</td><td>218</td><td>₹36,102,397.00</td><td>10.479137</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>2</td><td>KM</td><td>₹36,105,926.00</td><td>₹37,846.88</td><td>954</td><td>₹36,088,922.00</td><td>10.541480</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>2</td><td>MH</td><td>₹5,179,549.00</td><td>₹55,101.59</td><td>94</td><td>₹5,179,549.00</td><td>1.512220</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>2</td><td>NP</td><td>₹37,052,500.00</td><td>₹41,307.13</td><td>897</td><td>₹37,052,500.00</td><td>10.817841</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>2</td><td>PN</td><td>₹21,263,798.00</td><td>₹36,788.58</td><td>578</td><td>₹21,253,798.00</td><td>6.208175</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+      <tr><td>2</td><td>UL</td><td>₹5,762,084.00</td><td>₹40,865.84</td><td>141</td><td>₹5,754,299.00</td><td>1.682297</td><td>₹69,138.65</td><td>₹30,000.00</td><td>₹132,413.67</td></tr>
+    </tbody>
+  </table>
 </body>
 </html>
