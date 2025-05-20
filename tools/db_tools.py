@@ -4,9 +4,7 @@ from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 import logging
 import pandas as pd
-from pathlib import Path
-import os
-from state_manager import AnalysisStateManager
+from tools.state_manager import AnalysisStateManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -70,7 +68,7 @@ class DatabaseQueryTool:
                     
                     # Add analysis step
                     self.state_manager.add_analysis_step(
-                        description or f"Database query execution",
+                        description or "Database query execution",
                         {
                             "query": query,
                             "result_name": result_name,
@@ -100,12 +98,13 @@ class DatabaseQueryTool:
             return {"status": "error", "error": str(e)}
 
 # Create the database query tool
+state_manager = AnalysisStateManager()
 db_query_tool = StructuredTool(
     name="database_query_tool",
     description="""A tool to execute SQL queries and save results to state manager.
     Returns metadata about query results and maintains analysis history.
     Results are automatically saved as DataFrames for further analysis.""",
-    func=DatabaseQueryTool().execute_query,
+    func=DatabaseQueryTool(state_manager).execute_query,  # Pass state_manager instance
     args_schema=DatabaseQueryInput
 )
 

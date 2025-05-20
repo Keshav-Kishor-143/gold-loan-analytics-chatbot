@@ -5,16 +5,18 @@ from langchain_openai import ChatOpenAI
 from textwrap import dedent
 from dotenv import load_dotenv
 from tools.code_execution_tool import CodeExecutionTool
-from tools.db_tools import db_query_tool
+from tools.db_tools import DatabaseQueryTool, db_query_tool
 from tools.state_manager import AnalysisStateManager
 
 class AnalysisCrew:
     def __init__(self):
         load_dotenv()
-        self.llm = ChatOpenAI(model_name="gpt-4", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
-        self.code_executor = CodeExecutionTool()
+        self.llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
         self.state_manager = AnalysisStateManager()
+        self.code_executor = CodeExecutionTool(state_manager=self.state_manager)
+        self.db_tool = DatabaseQueryTool(state_manager=self.state_manager)
         self.message_history = ChatMessageHistory()
+
 
     def create_data_analyst(self):
         return Agent(
@@ -22,36 +24,32 @@ class AnalysisCrew:
             goal='Break down analysis tasks and guide the exploration process',
             backstory=dedent("""
                 You are an expert data analyst who excels at breaking down complex analyses into
-                smaller, logical steps. You work like a data scientist in a Jupyter notebook,
-                planning each step carefully and providing clear instructions to the coder.
+                smaller, logical steps. You do not execute code or queries yourself, but you plan
+                and assign all technical tasks to the Coder. Your output should be a clear, structured list of steps for the Coder to execute (SQL, Python, visualization, etc.).
                 
-                Your approach:
-                1. First understand the data schema
-                2. Break analysis into smaller tasks
-                3. Request exploratory queries first
-                4. Build complexity gradually
-                5. Validate results at each step
+                Separation of concerns:
+                - All data fetching must be done using SQL queries compatible with SQL Server Management Studio (SSMS). Use only queries like:
+                  - SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;
+                  - SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Loan_Customer_Summary';
+                  - SELECT * FROM [table_name] WHERE ...
+                - Do NOT use MySQL/Postgres-specific syntax such as LIMIT, SHOW TABLES, or non-existent schema names.
+                - All data processing, analysis, and visualization must be done using Python code (pandas, matplotlib, etc.).
+                - Never mix SQL and Python in the same step.
             """),
             verbose=True,
             allow_delegation=True,
             llm=self.llm,
-            tools=[db_query_tool],
+            tools=[],  # Analyst has no tools
             memory=self.message_history
         )
 
     def create_coder(self):
         return Agent(
             role='Data Engineer',
-            goal='Execute data queries and analysis code while maintaining state',
+            goal='Execute all assigned data queries and analysis code while maintaining state',
             backstory=dedent("""
                 You are an expert Python developer specialized in data engineering and analysis.
-                You maintain state between executions and build analysis incrementally.
-                You store intermediate results and can reference previous computations.
-                
-                Available tools:
-                1. db_query_tool: For database queries
-                2. code_executor: For Python code execution
-                3. state_manager: To save/load analysis state
+                You execute all SQL and Python tasks assigned by the Analyst, using the available tools.
             """),
             verbose=True,
             allow_delegation=False,
@@ -67,25 +65,30 @@ class AnalysisCrew:
         planning_task = Task(
             description=dedent(f"""
                 Plan the analysis for: "{user_query}"
-                
-                1. First understand available tables and their structure
-                2. Break down the analysis into small, logical steps
-                3. Create a sequence of tasks for the coder
-                4. Start with basic exploration before complex analysis
+                1. If you do not know the schema, ask the Coder to provide it first using a SQL Server compatible query (e.g., SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;).
+                2. Once you have the schema, break down the analysis into a clear, structured list of steps for the Coder to execute.
+                3. For each step:
+                   - If it is data fetching, provide the actual SQL query (for SQL Server, using only SSMS-compatible syntax as above).
+                   - If it is data processing, analysis, or visualization, provide the actual Python code (using pandas, matplotlib, etc.).
+                   - Never mix SQL and Python in the same step.
+                4. Do not execute any code or queries yourself.
+                5. Output only the list of steps (with code/queries) for the Coder.
             """),
-            agent=analyst
+            agent=analyst,
+            expected_output="A structured list of analysis steps, each with either an actual SQL query (for data fetching, using only SSMS-compatible syntax) or Python code (for processing/visualization), for the Coder to execute."
         )
 
         execution_task = Task(
             description=dedent("""
-                Execute the analysis steps provided by the analyst:
-                1. Use db_query_tool for database queries
-                2. Save results using state_manager
-                3. Build on previous results
-                4. Create visualizations when needed
-                5. Provide clear explanations of findings
+                For each step provided by the Analyst:
+                - If the step is a SQL query, use db_query_tool to fetch data (do not use code_executor for SQL).
+                - If the step is Python code, use code_executor to process/analyze/visualize data (do not use db_query_tool for Python).
+                - Save results and visualizations as appropriate.
+                - Return outputs and explanations for each step.
+                - Maintain strict separation: db_query_tool for SQL, code_executor for Python only.
             """),
-            agent=coder
+            agent=coder,
+            expected_output="Results and explanations for each analysis step provided by the Analyst, with strict separation of data fetching (SQL) and processing (Python)."
         )
 
         return [planning_task, execution_task]

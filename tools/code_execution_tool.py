@@ -1,10 +1,9 @@
 from typing import Type, Optional, Dict, Any
 import docker
-import pandas as pd
 import json
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
-from state_manager import AnalysisStateManager
+from tools.state_manager import AnalysisStateManager
 
 class DockerSandbox:
     def __init__(self, container_name: str = "my-python-container", state_manager=None):
@@ -96,10 +95,16 @@ class CodeExecutionTool(BaseTool):
     Results can be saved to the state manager for future reference.
     """
     args_schema: Type[BaseModel] = CodeExecutionInput
-
+    state_manager: Optional[AnalysisStateManager] = None
+    sandbox: Optional[DockerSandbox] = None  # Add this line to define the sandbox field
+ 
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
     def __init__(self, state_manager: Optional[AnalysisStateManager] = None):
         super().__init__()
         self.state_manager = state_manager or AnalysisStateManager()
+        self.sandbox = DockerSandbox(state_manager=self.state_manager)
 
     def _run(self, code: str, save_state: bool = True, description: str = "") -> Dict[str, Any]:
         sandbox = DockerSandbox(state_manager=self.state_manager)

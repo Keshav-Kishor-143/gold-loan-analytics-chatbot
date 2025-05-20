@@ -1,7 +1,6 @@
 import pandas as pd
 from pathlib import Path
 import json
-import pickle
 from datetime import datetime
 
 class AnalysisStateManager:
@@ -72,7 +71,7 @@ class AnalysisStateManager:
             for df_name, file_ref in loaded_state['dataframes'].items():
                 df_path = self.workspace_dir / file_ref
                 if df_path.exists():
-                    self.state['dataframes'][df_name] = pd.read_pickle(df_path)
+                    self.state['dataframes'][df_name] = pd(df_path)
             
             # Restore other state components
             self.state['variables'] = loaded_state['variables']
