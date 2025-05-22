@@ -22,8 +22,19 @@ class DockerSandbox:
             return code
 
         # Get current state variables
-        state_vars = self.state_manager.get_variable_dict()
-        state_dfs = self.state_manager.get_dataframe_dict()
+        state_vars = {}
+        state_dfs = {}
+        
+        # Safely get variables and dataframes
+        if hasattr(self.state_manager, 'get_variable_dict'):
+            state_vars = self.state_manager.get_variable_dict()
+        elif hasattr(self.state_manager, 'state') and 'variables' in self.state_manager.state:
+            state_vars = self.state_manager.state['variables']
+            
+        if hasattr(self.state_manager, 'get_dataframe_dict'):
+            state_dfs = self.state_manager.get_dataframe_dict()
+        elif hasattr(self.state_manager, 'state') and 'dataframes' in self.state_manager.state:
+            state_dfs = self.state_manager.state['dataframes']
 
         # Create state initialization code
         init_code = []

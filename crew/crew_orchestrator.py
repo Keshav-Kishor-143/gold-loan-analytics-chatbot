@@ -1,123 +1,159 @@
+# Filename: enhanced_crew_orchestrator.py
+
 import os
 from crewai import Crew, Agent, Task
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_openai import ChatOpenAI
 from textwrap import dedent
 from dotenv import load_dotenv
-from tools.code_execution_tool import CodeExecutionTool
-from tools.db_tools import DatabaseQueryTool, db_query_tool
+from crewai_tools import CodeInterpreterTool
+from tools.db_tools import db_query_tool
 from tools.state_manager import AnalysisStateManager
+# from tools.data_bootstrap import bootstrap_database_data
 
-class AnalysisCrew:
-    def __init__(self):
-        load_dotenv()
-        self.llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
-        self.state_manager = AnalysisStateManager()
-        self.code_executor = CodeExecutionTool(state_manager=self.state_manager)
-        self.db_tool = DatabaseQueryTool(state_manager=self.state_manager)
-        self.message_history = ChatMessageHistory()
+# Load environment and initialize LLM
+load_dotenv()
+llm = ChatOpenAI(model_name="gpt-4o-mini", openai_api_key=os.getenv("OPENAI_API_KEY", ''))
 
+# Shared conversational memory
+message_history = ChatMessageHistory()
+state_manager = AnalysisStateManager()
+code_interpreter = CodeInterpreterTool()
 
-    def create_data_analyst(self):
-        return Agent(
-            role='Data Analyst',
-            goal='Break down analysis tasks and guide the exploration process',
-            backstory=dedent("""
-                You are an expert data analyst who excels at breaking down complex analyses into
-                smaller, logical steps. You do not execute code or queries yourself, but you plan
-                and assign all technical tasks to the Coder. Your output should be a clear, structured list of steps for the Coder to execute (SQL, Python, visualization, etc.).
-                
-                Separation of concerns:
-                - All data fetching must be done using SQL queries compatible with SQL Server Management Studio (SSMS). Use only queries like:
-                  - SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;
-                  - SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Loan_Customer_Summary';
-                  - SELECT * FROM [table_name] WHERE ...
-                - Do NOT use MySQL/Postgres-specific syntax such as LIMIT, SHOW TABLES, or non-existent schema names.
-                - All data processing, analysis, and visualization must be done using Python code (pandas, matplotlib, etc.).
-                - Never mix SQL and Python in the same step.
-            """),
-            verbose=True,
-            allow_delegation=True,
-            llm=self.llm,
-            tools=[],  # Analyst has no tools
-            memory=self.message_history
-        )
+# ----------------------------------------
+# Agent Definitions
+# ----------------------------------------
 
-    def create_coder(self):
-        return Agent(
-            role='Data Engineer',
-            goal='Execute all assigned data queries and analysis code while maintaining state',
-            backstory=dedent("""
-                You are an expert Python developer specialized in data engineering and analysis.
-                You execute all SQL and Python tasks assigned by the Analyst, using the available tools.
-            """),
-            verbose=True,
-            allow_delegation=False,
-            llm=self.llm,
-            tools=[self.code_executor, db_query_tool],
-            memory=self.message_history
-        )
+master_analyst = Agent(
+    role='Master Analyst',
+    goal='Coordinate EDA, hypothesis generation, coding and narrative reporting',
+    backstory=dedent("""
+        You are a master analyst who coordinates the entire analysis. You break down the user query into tasks for your specialized team: EDA agent, hypothesis generator, coder, and narrator.
+    """),
+    verbose=True,
+    allow_delegation=True,
+    tools=[],
+    llm=llm,
+    memory=message_history
+)
 
-    def create_tasks(self, user_query):
-        analyst = self.create_data_analyst()
-        coder = self.create_coder()
+eda_agent = Agent(
+    role='EDA Agent',
+    goal='Explore the database schema and data content to support analysis',
+    backstory="You specialize in exploring database schemas and extracting key summaries to support further analysis.",
+    verbose=True,
+    allow_delegation=False,
+    tools=[code_interpreter],
+    llm=llm,
+    memory=message_history
+)
 
-        planning_task = Task(
-            description=dedent(f"""
-                Plan the analysis for: "{user_query}"
-                1. If you do not know the schema, ask the Coder to provide it first using a SQL Server compatible query (e.g., SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES;).
-                2. Once you have the schema, break down the analysis into a clear, structured list of steps for the Coder to execute.
-                3. For each step:
-                   - If it is data fetching, provide the actual SQL query (for SQL Server, using only SSMS-compatible syntax as above).
-                   - If it is data processing, analysis, or visualization, provide the actual Python code (using pandas, matplotlib, etc.).
-                   - Never mix SQL and Python in the same step.
-                4. Do not execute any code or queries yourself.
-                5. Output only the list of steps (with code/queries) for the Coder.
-            """),
-            agent=analyst,
-            expected_output="A structured list of analysis steps, each with either an actual SQL query (for data fetching, using only SSMS-compatible syntax) or Python code (for processing/visualization), for the Coder to execute."
-        )
+hypothesis_agent = Agent(
+    role='Hypothesis Generator',
+    goal='Identify patterns, trends, and possible explanations from the data',
+    backstory="You specialize in exploring data for insights and forming data-driven hypotheses.",
+    verbose=True,
+    allow_delegation=False,
+    tools=[code_interpreter],
+    llm=llm,
+    memory=message_history
+)
 
-        execution_task = Task(
-            description=dedent("""
-                For each step provided by the Analyst:
-                - If the step is a SQL query, use db_query_tool to fetch data (do not use code_executor for SQL).
-                - If the step is Python code, use code_executor to process/analyze/visualize data (do not use db_query_tool for Python).
-                - Save results and visualizations as appropriate.
-                - Return outputs and explanations for each step.
-                - Maintain strict separation: db_query_tool for SQL, code_executor for Python only.
-            """),
-            agent=coder,
-            expected_output="Results and explanations for each analysis step provided by the Analyst, with strict separation of data fetching (SQL) and processing (Python)."
-        )
+coder = Agent(
+    role='Coder',
+    goal='Execute Python code for EDA, visualization, and statistical analysis',
+    backstory="You are a skilled Python developer who runs all code needed to answer analytical questions.",
+    verbose=True,
+    allow_delegation=False,
+    tools=[code_interpreter],
+    llm=llm,
+    memory=message_history
+)
 
-        return [planning_task, execution_task]
+narrator = Agent(
+    role='Narrator',
+    goal='Write a coherent markdown story based on the findings and insights',
+    backstory="You are an expert in crafting compelling data narratives and generating user-friendly reports.",
+    verbose=True,
+    allow_delegation=False,
+    tools=[],
+    llm=llm,
+    memory=message_history
+)
 
-    def run_analysis(self, user_query):
-        tasks = self.create_tasks(user_query)
-        
-        crew = Crew(
-            agents=[self.create_data_analyst(), self.create_coder()],
-            tasks=tasks,
-            verbose=True
-        )
+# ----------------------------------------
+# Tasks
+# ----------------------------------------
 
-        try:
-            result = crew.kickoff()
-            return {
-                'result': result,
-                'analysis_state': self.state_manager.get_current_state()
-            }
-        except Exception as e:
-            print(f"Error during analysis: {str(e)}")
-            return None
+def run_crew_analysis_v2(user_query):
+    # Bootstrap schema and table data into state for all agents
+    # bootstrap_database_data(state_manager)
 
-def main():
-    crew = AnalysisCrew()
-    user_query = "Analyze loan distribution by customer type and branch"
-    result = crew.run_analysis(user_query)
-    print("\n\n======== ANALYSIS RESULTS ========")
-    print(result)
+    analysis_task = Task(
+        description=f"""
+            Break down the user's request: "{user_query}" into smaller steps.
+            Assign EDA, hypothesis, coding, and narrative writing to appropriate agents.
+            Use all available insights from the schema and bootstrap to guide the flow.
+        """,
+        agent=master_analyst,
+        expected_output="Delegated tasks assigned to relevant agents."
+    )
+
+    eda_task = Task(
+        description="""
+            Using the schema and preloaded data, summarize key stats, row counts, column types, and distributions.
+            Suggest any anomalies or key descriptive observations.
+        """,
+        agent=eda_agent,
+        expected_output="Key findings from EDA including tables, schema insights, and summaries."
+    )
+
+    hypothesis_task = Task(
+        description="""
+            Using data available from EDA, propose hypotheses or patterns relevant to the user query.
+        """,
+        agent=hypothesis_agent,
+        expected_output="List of patterns, trends, and supported hypotheses from the data."
+    )
+
+    coding_task = Task(
+        description="""
+            Write and run Python code (pandas, matplotlib, seaborn) to validate hypotheses and generate visualizations.
+        """,
+        agent=coder,
+        expected_output="Results from hypothesis testing, charts, and statistical outputs."
+    )
+
+    narration_task = Task(
+        description="""
+            Craft a final markdown report that presents:
+            - EDA findings
+            - Hypotheses
+            - Validations with visuals
+            - Answer to the user's query in a story-like fashion
+        """,
+        agent=narrator,
+        expected_output="Markdown report that synthesizes the full analysis in plain English."
+    )
+
+    crew = Crew(
+        agents=[master_analyst, eda_agent, hypothesis_agent, coder, narrator],
+        tasks=[analysis_task, eda_task, hypothesis_task, coding_task, narration_task],
+        verbose=True
+    )
+
+    try:
+        result = crew.kickoff()
+        return {
+            'result': result,
+            'analysis_state': state_manager.get_current_state()
+        }
+    except Exception as e:
+        print(f"Error during analysis: {str(e)}")
+        return None
 
 if __name__ == "__main__":
-    main()
+    query = "Analyze customer behavior by region and suggest segmentation strategies."
+    result = run_crew_analysis_v2(query)
+    print("\n\n======== FINAL REPORT ========")
+    print(result['result'])

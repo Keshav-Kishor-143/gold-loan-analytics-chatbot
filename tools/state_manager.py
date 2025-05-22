@@ -14,7 +14,14 @@ class AnalysisStateManager:
         }
         self.workspace_dir = Path('./analysis_workspace')
         self.workspace_dir.mkdir(exist_ok=True)
-
+    def get_variable_dict(self):
+        """Return a dictionary of all variables in state"""
+        return self.state['variables']
+    
+    def get_dataframe_dict(self):
+        """Return a dictionary of all dataframes in state"""
+        return self.state['dataframes']
+    
     def save_dataframe(self, name: str, df: pd.DataFrame):
         """Save a DataFrame to the state"""
         self.state['dataframes'][name] = df
