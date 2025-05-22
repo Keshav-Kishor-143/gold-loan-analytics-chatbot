@@ -70,7 +70,6 @@ def execute_query(query: str, save_csv: bool = True, csv_path: Optional[str] = N
                 else:
                     # Use a default path if none provided
                     import tempfile
-                    directory = Path('./temp_dir')  # Changed to use a consistent directory
                     os.makedirs(directory, exist_ok=True)
                     filename = f"query_results{file_suffix}.csv"
                     filepath = directory / filename
@@ -104,6 +103,7 @@ def execute_query(query: str, save_csv: bool = True, csv_path: Optional[str] = N
         logger.error(f"Error executing query: {str(e)}")
         return {"status": "error", "error": str(e)}
  
+ 
 # Create the database query tool
 db_query_tool = StructuredTool(
     name="database_query_tool",
@@ -113,6 +113,9 @@ db_query_tool = StructuredTool(
     func=execute_query,
     args_schema=DatabaseQueryInput
 )
+
+
+
  
 if __name__ == "__main__":
     # Test the tool

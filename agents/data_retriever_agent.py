@@ -10,7 +10,6 @@ def create_data_retriever_agent():
             understanding user intent from natural language queries and retrieving only
             the most relevant data needed for analysis. You excel at filtering large datasets
             to provide focused, relevant information that directly addresses the user's needs.
-            
         """),
         verbose=True,
         allow_delegation=False,

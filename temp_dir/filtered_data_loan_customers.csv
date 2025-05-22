@@ -1,4 +1,4 @@
-CustomerType,BranchName,TotalLoans,TotalLoanAmount
+CustomerType,BranchName,LoanCount,TotalLoanAmount
 2,NP,897,37052500.0
 2,MH,94,5179549.0
 1,KM,368,35372763.0
